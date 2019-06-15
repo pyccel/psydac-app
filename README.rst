@@ -1,2 +1,4 @@
-# psydac-app
+psydac-app
+==========
+
 Psydac apps using Dash
