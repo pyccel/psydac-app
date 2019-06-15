@@ -347,6 +347,7 @@ tab_subdivision = dcc.Tab(label='Subdivision', children=[
 
 # =================================================================
 tab_refinement = dcc.Tab(label='Refinement', children=[
+                         dcc.Store(id='refined_model'),
                          html.Div([
                              # ...
                              html.Label('Axis'),
@@ -356,7 +357,7 @@ tab_refinement = dcc.Tab(label='Refinement', children=[
                                                    {'label': 'w', 'value': '2'}],
                                           value=[],
                                           multi=True),
-                             html.Button('Apply', id='button_insert_knot'),
+                             html.Button('Apply', id='button_refine'),
                              html.Hr(),
                              # ...
 
@@ -545,19 +546,124 @@ def load_model(n_clicks,
     print('load done')
     return spl
 
+# =================================================================
+@app.callback(
+    Output("refined_model", "data"),
+    [Input("model", "value"),
+     Input('button_refine', 'n_clicks'),
+     Input('insert_knot_value', 'value'),
+     Input('insert_knot_times', 'value'),
+     Input('elevate_degree_times', 'value'),
+     Input('subdivision_times', 'value')]
+)
+def apply_refine(models, n_clicks, t, t_times, m, levels):
+
+    if n_clicks is None:
+        return None
+
+    if len(models) == 0:
+        return None
+
+    if len(models) > 1:
+        return None
+
+    name  = models[0]
+    model = namespace[name]
+
+    # ... insert knot
+    if not( t is '' ):
+        times = int(t_times)
+        t = float(t)
+
+        if isinstance(model, SplineCurve):
+            t_min = model.knots[ model.degree]
+            t_max = model.knots[-model.degree]
+            if t > t_min and t < t_max:
+                knots, degree, P = curve_insert_knot( model.knots,
+                                                      model.degree,
+                                                      model.points,
+                                                      t, times=times )
+
+                model = SplineCurve(knots=knots, degree=degree, points=P)
+
+                if not( n_clicks is None ):
+                    namespace[name] = model
+
+        elif isinstance(model, SplineSurface):
+            u_min = model.knots[0][ model.degree[0]]
+            u_max = model.knots[0][-model.degree[0]]
+            v_min = model.knots[1][ model.degree[1]]
+            v_max = model.knots[1][-model.degree[1]]
+            condition = False
+            # TODO
+            if t > u_min and t < u_max:
+                Tu, Tv, pu, pv, P = surface_insert_knot( *model.knots,
+                                                         *model.degree,
+                                                          model.points,
+                                                         t, times=times,
+                                                         axis=None)
+
+                model = SplineSurface(knots=(Tu, Tv), degree=(pu, pv), points=P)
+    # ...
+
+    # ... degree elevation
+    if m > 0:
+        m = int(m)
+
+        if isinstance(model, SplineCurve):
+            knots, degree, P = curve_elevate_degree( model.knots,
+                                                     model.degree,
+                                                     model.points,
+                                                     m=m)
+
+            model = SplineCurve(knots=knots, degree=degree, points=P)
+    # ...
+
+    # ...subdivision
+    if levels > 0:
+        levels = int(levels)
+
+        for level in range(levels):
+            grid = np.unique(model.knots)
+            for a,b in zip(grid[:-1], grid[1:]):
+                t = (a+b)/2.
+
+                knots, degree, P = curve_insert_knot( model.knots,
+                                                      model.degree,
+                                                      model.points,
+                                                      t, times=1 )
+
+                model = SplineCurve(knots=knots, degree=degree, points=P)
+    # ...
+
+    print('refinement done')
+    return model
+
 
 # =================================================================
 @app.callback(
-    Output("model", "options"),
-    [Input('loaded_model', 'data')]
+    [Output("model", "options"),
+     Output("loaded_model", "clear_data"),
+     Output("refined_model", "clear_data")],
+    [Input('loaded_model', 'data'),
+     Input('refined_model', 'data')]
 )
-def update_namespace(loaded_model):
+def update_namespace(loaded_model, refined_model):
     data = None
+    clear_load   = False
+    clear_refine = False
     if not( loaded_model is None ):
         data = loaded_model
+        clear_load = True
+
+    elif not( refined_model is None ):
+        data = refined_model
+        clear_refine = True
 
     if data is None:
-        return []
+        print('PAR ICI', clear_load)
+        options = [{'label':name, 'value':name} for name in namespace.keys()]
+        return options, clear_load, clear_refine
 
     knots, degree, points = data
     if isinstance(knots, (tuple, list)):
@@ -579,25 +685,22 @@ def update_namespace(loaded_model):
     namespace['model_{}'.format(model_id)] = current_model
     model_id += 1
 
-    return [{'label':name, 'value':name} for name in namespace.keys()]
+    print('PAR LA', clear_load)
+    print(list(namespace.keys()))
+    options = [{'label':name, 'value':name} for name in namespace.keys()]
+
+    return options, clear_load, clear_refine
 
 
 # =================================================================
 @app.callback(
     Output("graph", "figure"),
-    [Input("model", "value"),
-     Input('button_insert_knot', 'n_clicks'),
-     Input('insert_knot_value', 'value'),
-     Input('insert_knot_times', 'value'),
-     Input('elevate_degree_times', 'value'),
-     Input('subdivision_times', 'value')]
+    [Input("model", "value")]
 )
-def update_graph(models, n_clicks, t, t_times, m, levels):
+def update_graph(models):
 
     if len(models) == 0:
         return {'data': []}
-
-#    print(namespace)
 
     # ...
     _models = []
@@ -609,130 +712,6 @@ def update_graph(models, n_clicks, t, t_times, m, levels):
             _models += [model]
 
     models = _models
-    # ...
-
-    # ... insert knot
-    if not( t is '' ):
-        times = int(t_times)
-        t = float(t)
-
-        _models = []
-        for model in models:
-            # ...
-            name = None
-            for k,v in namespace.items():
-                if v is model:
-                    name = k
-
-            if name is None:
-                print('Could not find model in namespace')
-            # ...
-
-            if isinstance(model, SplineCurve):
-                t_min = model.knots[ model.degree]
-                t_max = model.knots[-model.degree]
-                if t > t_min and t < t_max:
-                    knots, degree, P = curve_insert_knot( model.knots,
-                                                          model.degree,
-                                                          model.points,
-                                                          t, times=times )
-
-                    model = SplineCurve(knots=knots, degree=degree, points=P)
-
-                    if not( n_clicks is None ):
-                        namespace[name] = model
-
-            elif isinstance(model, SplineSurface):
-                u_min = model.knots[0][ model.degree[0]]
-                u_max = model.knots[0][-model.degree[0]]
-                v_min = model.knots[1][ model.degree[1]]
-                v_max = model.knots[1][-model.degree[1]]
-                condition = False
-                # TODO
-                if t > u_min and t < u_max:
-                    Tu, Tv, pu, pv, P = surface_insert_knot( *model.knots,
-                                                             *model.degree,
-                                                              model.points,
-                                                             t, times=times,
-                                                             axis=None)
-
-                    model = SplineSurface(knots=(Tu, Tv), degree=(pu, pv), points=P)
-
-                    if not( n_clicks is None ):
-                        namespace[name] = model
-
-            _models += [model]
-
-        models = _models
-    # ...
-
-    # ... degree elevation
-    if m > 0:
-        m = int(m)
-
-        _models = []
-        for model in models:
-            if isinstance(model, SplineCurve):
-                # ...
-                name = None
-                for k,v in namespace.items():
-                    if v is model:
-                        name = k
-
-                if name is None:
-                    print('Could not find model in namespace')
-                # ...
-
-                knots, degree, P = curve_elevate_degree( model.knots,
-                                                         model.degree,
-                                                         model.points,
-                                                         m=m)
-
-                model = SplineCurve(knots=knots, degree=degree, points=P)
-
-                if not( n_clicks is None ):
-                    namespace[name] = model
-
-            _models += [model]
-
-        models = _models
-    # ...
-
-    # ...subdivision
-    if levels > 0:
-        levels = int(levels)
-
-        _models = []
-        for model in models:
-            if isinstance(model, SplineCurve):
-                # ...
-                name = None
-                for k,v in namespace.items():
-                    if v is model:
-                        name = k
-
-                if name is None:
-                    print('Could not find model in namespace')
-                # ...
-
-                for level in range(levels):
-                    grid = np.unique(model.knots)
-                    for a,b in zip(grid[:-1], grid[1:]):
-                        t = (a+b)/2.
-
-                        knots, degree, P = curve_insert_knot( model.knots,
-                                                              model.degree,
-                                                              model.points,
-                                                              t, times=1 )
-
-                        model = SplineCurve(knots=knots, degree=degree, points=P)
-
-                if not( n_clicks is None ):
-                    namespace[name] = model
-
-            _models += [model]
-
-        models = _models
     # ...
 
     # ...
