@@ -29,30 +29,19 @@ SplineVolume  = namedtuple('SplineVolume',  'knots, degree, points')
 namespace = OrderedDict()
 model_id = 0
 
-# ... TODO to be removed
-def create_curve_ex1():
-    knots  = [0., 0., 0., 0.5, 1., 1., 1.]
-    degree = 2
+# ... TODO to be moved to gallery
+def make_line(origin=(0.,0.), end=(1.,0.)):
+    knots  = [0., 0., 1., 1.]
+    degree = 1
     n      = len(knots) - degree - 1
 
     P = np.zeros((n, 2))
-    P[:, 0] = [1., 0.7, 1., 0.]
-    P[:, 1] = [0., 0.5, 1., 1.]
+    P[:, 0] = [origin[0], end[0]]
+    P[:, 1] = [origin[1], end[1]]
 
     return SplineCurve(knots=knots, degree=degree, points=P)
 
-def create_curve_ex0():
-    knots  = [0., 0., 0., 1., 1., 1.]
-    degree = 2
-    n      = len(knots) - degree - 1
-
-    P = np.zeros((n, 2))
-    P[:, 0] = [1., 1., 0.]
-    P[:, 1] = [0., 1., 1.]
-
-    return SplineCurve(knots=knots, degree=degree, points=P)
-
-def make_square():
+def make_square(origin=(0,0), length=1.):
     Tu  = [0., 0., 1., 1.]
     Tv  = [0., 0., 1., 1.]
     pu = 1
@@ -62,11 +51,16 @@ def make_square():
     gridu = np.unique(Tu)
     gridv = np.unique(Tv)
 
+    origin = np.asarray(origin)
+
     P = np.asarray([[[0.,0.],[0.,1.]],[[1.,0.],[1.,1.]]])
+    for i in range(0, 2):
+        for j in range(0, 2):
+            P[i,j,:] = origin + P[i,j,:]*length
 
     return SplineSurface(knots=(Tu, Tv), degree=(pu, pv), points=P)
 
-def make_circle():
+def make_circle(center=(0.,0.), radius=1.):
     Tu  = [0., 0., 0., 1, 1., 1.]
     Tv  = [0., 0., 0., 1, 1., 1.]
     pu = 2
@@ -87,6 +81,10 @@ def make_circle():
     P[0,2,:]   = np.asarray([s    , -s   ])
     P[1,2,:]   = np.asarray([2*s  , 0.   ])
     P[2,2,:]   = np.asarray([s    , s    ])
+
+    P *= radius
+    P[:,:,0] += center[0]
+    P[:,:,1] += center[1]
 
     return SplineSurface(knots=(Tu, Tv), degree=(pu, pv), points=P)
 # ...
@@ -221,6 +219,12 @@ tab_arc = dcc.Tab(label='arc', children=[
 tab_square = dcc.Tab(label='square', children=[
                               html.Label('origin'),
                               dcc.Input(id='square_origin',
+                                        placeholder='Enter a value ...',
+                                        value='',
+                                        type='text'
+                              ),
+                              html.Label('length'),
+                              dcc.Input(id='square_length',
                                         placeholder='Enter a value ...',
                                         value='',
                                         type='text'
@@ -418,6 +422,14 @@ tab_editor = dcc.Tab(label='Editor', children=[
 
 # =================================================================
 tab_viewer = dcc.Tab(label='Viewer', children=[
+
+                    html.Label('Geometry'),
+                    dcc.Dropdown(id="model",
+                                 options=[{'label':name, 'value':name}
+                                          for name in namespace.keys()],
+                                 value=[],
+                                 multi=True),
+
                      html.Div([
                          # ...
                          html.Div([
@@ -437,16 +449,6 @@ app.layout = html.Div([
     # ...
 
     # ...
-    dcc.Store(id='current_model'),
-    html.Label('Geometry'),
-    dcc.Dropdown(id="model",
-                 options=[{'label':name, 'value':name}
-                          for name in namespace.keys()],
-                 value=[],
-                 multi=True),
-    # ...
-
-    # ...
     dcc.Tabs(id="tabs", children=[
         tab_viewer,
         tab_loader,
@@ -462,22 +464,80 @@ app.layout = html.Div([
 @app.callback(
     Output("loaded_model", "data"),
     [Input('button_load', 'n_clicks'),
+     Input('line_origin', 'value'),
+     Input('line_end', 'value'),
      Input('square_origin', 'value'),
+     Input('square_length', 'value'),
      Input('circle_center', 'value'),
      Input('circle_radius', 'value')]
 )
-def load_model(n_clicks, square_origin, circle_center, circle_radius):
+def load_model(n_clicks,
+               line_origin, line_end,
+               square_origin, square_length,
+               circle_center, circle_radius):
 
     if n_clicks is None:
         return None
 
-    if not( square_origin is '' ):
-        spl = make_square()
-        # TODO
+    if not( line_origin is '' ) and not( line_end is '' ):
+        # ...
+        try:
+            line_origin = [float(i) for i in line_origin.split(',')]
+
+        except:
+            raise ValueError('Cannot convert line_origin')
+        # ...
+
+        # ...
+        try:
+            line_end = [float(i) for i in line_end.split(',')]
+
+        except:
+            raise ValueError('Cannot convert line_end')
+        # ...
+
+        spl = make_line(origin=line_origin,
+                        end=line_end)
+
+    elif not( square_origin is '' ) and not( square_length is '' ):
+        # ...
+        try:
+            square_origin = [float(i) for i in square_origin.split(',')]
+
+        except:
+            raise ValueError('Cannot convert square_origin')
+        # ...
+
+        # ...
+        try:
+            square_length = float(square_length)
+
+        except:
+            raise ValueError('Cannot convert square_length')
+        # ...
+
+        spl = make_square(origin=square_origin,
+                          length=square_length)
 
     elif not( circle_center is '' ) and  not( circle_radius is '' ):
-        spl = make_circle()
-        # TODO
+        # ...
+        try:
+            circle_center = [float(i) for i in circle_center.split(',')]
+
+        except:
+            raise ValueError('Cannot convert circle_center')
+        # ...
+
+        # ...
+        try:
+            circle_radius = float(circle_radius)
+
+        except:
+            raise ValueError('Cannot convert circle_radius')
+        # ...
+
+        spl = make_circle(center=circle_center,
+                          radius=circle_radius)
 
     else:
         raise NotImplementedError('TODO')
@@ -492,18 +552,32 @@ def load_model(n_clicks, square_origin, circle_center, circle_radius):
     [Input('loaded_model', 'data')]
 )
 def update_namespace(loaded_model):
+    data = None
     if not( loaded_model is None ):
-        knots, degree, points = loaded_model
-        knots = [np.asarray(T) for T in knots]
-        points = np.asarray(points)
-        if len(degree) == 2:
-            current_model = SplineSurface(knots=knots,
-                                          degree=degree,
-                                          points=points)
+        data = loaded_model
 
-        global model_id
-        namespace['model_{}'.format(model_id)] = current_model
-        model_id += 1
+    if data is None:
+        return []
+
+    knots, degree, points = data
+    if isinstance(knots, (tuple, list)):
+        knots = [np.asarray(T) for T in knots]
+
+    points = np.asarray(points)
+
+    if isinstance(degree, int):
+        current_model = SplineCurve(knots=knots,
+                                    degree=degree,
+                                    points=points)
+
+    elif len(degree) == 2:
+        current_model = SplineSurface(knots=knots,
+                                      degree=degree,
+                                      points=points)
+
+    global model_id
+    namespace['model_{}'.format(model_id)] = current_model
+    model_id += 1
 
     return [{'label':name, 'value':name} for name in namespace.keys()]
 
