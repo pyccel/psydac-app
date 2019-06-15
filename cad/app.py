@@ -28,6 +28,7 @@ SplineVolume  = namedtuple('SplineVolume',  'knots, degree, points')
 
 namespace = OrderedDict()
 model_id = 0
+timestamp_refine = -100
 
 # ... TODO to be moved to gallery
 def make_line(origin=(0.,0.), end=(1.,0.)):
@@ -357,7 +358,8 @@ tab_refinement = dcc.Tab(label='Refinement', children=[
                                                    {'label': 'w', 'value': '2'}],
                                           value=[],
                                           multi=True),
-                             html.Button('Apply', id='button_refine'),
+                             html.Button('Apply', id='button_refine',
+                                         n_clicks_timestamp=0),
                              html.Hr(),
                              # ...
 
@@ -551,15 +553,20 @@ def load_model(n_clicks,
     Output("refined_model", "data"),
     [Input("model", "value"),
      Input('button_refine', 'n_clicks'),
+     Input('button_refine', 'n_clicks_timestamp'),
      Input('insert_knot_value', 'value'),
      Input('insert_knot_times', 'value'),
      Input('elevate_degree_times', 'value'),
      Input('subdivision_times', 'value')]
 )
-def apply_refine(models, n_clicks, t, t_times, m, levels):
+def apply_refine(models, n_clicks, time_clicks, t, t_times, m, levels):
 
-    if n_clicks is None:
+    global timestamp_refine
+
+    if n_clicks is None or time_clicks <= timestamp_refine:
         return None
+
+    timestamp_refine = time_clicks
 
     if len(models) == 0:
         return None
@@ -661,7 +668,6 @@ def update_namespace(loaded_model, refined_model):
         clear_refine = True
 
     if data is None:
-        print('PAR ICI', clear_load)
         options = [{'label':name, 'value':name} for name in namespace.keys()]
         return options, clear_load, clear_refine
 
@@ -685,8 +691,6 @@ def update_namespace(loaded_model, refined_model):
     namespace['model_{}'.format(model_id)] = current_model
     model_id += 1
 
-    print('PAR LA', clear_load)
-    print(list(namespace.keys()))
     options = [{'label':name, 'value':name} for name in namespace.keys()]
 
     return options, clear_load, clear_refine
