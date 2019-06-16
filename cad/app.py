@@ -164,7 +164,7 @@ def make_circle(center=(0.,0.), radius=1.):
 # ...
 
 # ...
-def plot_curve(crv, nx=101):
+def plot_curve(crv, nx=101, control_polygon=False):
     knots  = crv.knots
     degree = crv.degree
     P      = crv.points
@@ -185,24 +185,32 @@ def plot_curve(crv, nx=101):
         for i,x in enumerate(xs):
             Q[i,:] = point_on_nurbs_curve(knots, P, W, x)
 
+    line_marker = dict(color='#0066FF', width=2)
     x = Q[:,0] ; y = Q[:,1]
 
     trace_crv = go.Scatter(
         x=x,
         y=y,
         mode = 'lines',
-        name='Curve'
+        name='Curve',
+        line=line_marker,
     )
     # ...
 
+    if not control_polygon:
+        return [trace_crv]
+
     # ... control polygon
+    line_marker = dict(color='#ff7f0e', width=2)
+
     x = P[:,0] ; y = P[:,1]
 
     trace_ctrl = go.Scatter(
         x=x,
         y=y,
         mode='lines+markers',
-        name='Control polygon'
+        name='Control polygon',
+        line=line_marker,
     )
     # ...
 
@@ -210,7 +218,7 @@ def plot_curve(crv, nx=101):
 # ...
 
 # ...
-def plot_surface(srf, Nu=101, Nv=101):
+def plot_surface(srf, Nu=101, Nv=101, control_polygon=False):
     Tu, Tv = srf.knots
     pu, pv = srf.degree
     P      = srf.points
@@ -266,7 +274,25 @@ def plot_surface(srf, Nu=101, Nv=101):
                  ]
     # ...
 
-    # ... TODO control polygon
+    if not control_polygon:
+        return lines
+
+    # ... control polygon
+    line_marker = dict(color='#ff7f0e', width=2)
+
+    for i in range(nu):
+        lines += [go.Scatter(mode = 'lines+markers',
+                             line=line_marker,
+                             x=P[i,:,0],
+                             y=P[i,:,1])
+                 ]
+
+    for j in range(nv):
+        lines += [go.Scatter(mode = 'lines+markers',
+                             line=line_marker,
+                             x=P[:,j,0],
+                             y=P[:,j,1])
+                 ]
     # ...
 
     return lines
@@ -529,6 +555,10 @@ tab_viewer = dcc.Tab(label='Viewer', children=[
                                  multi=True),
 
                      html.Div([
+                         daq.BooleanSwitch(label='Control polygon',
+                           id='control_polygon',
+                           on=False
+                         ),
                          # ...
                          html.Div([
                              dcc.Graph(id="graph")]),
@@ -906,9 +936,10 @@ def update_namespace(loaded_model, refined_model):
 # =================================================================
 @app.callback(
     Output("graph", "figure"),
-    [Input("model", "value")]
+    [Input("model", "value"),
+     Input('control_polygon', 'on')]
 )
-def update_graph(models):
+def update_graph(models, control_polygon):
 
     if len(models) == 0:
         return {'data': []}
@@ -929,10 +960,15 @@ def update_graph(models):
     traces = []
     for model in models:
         if isinstance(model, (SplineCurve, NurbsCurve)):
-            traces += plot_curve(model, nx=101)
+            traces += plot_curve(model,
+                                 nx=101,
+                                 control_polygon=control_polygon)
 
         elif isinstance(model, (SplineSurface, NurbsSurface)):
-            traces += plot_surface(model, Nu=101, Nv=101)
+            traces += plot_surface(model,
+                                   Nu=101,
+                                   Nv=101,
+                                   control_polygon=control_polygon)
 
         else:
 
