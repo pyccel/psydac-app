@@ -841,9 +841,9 @@ def apply_refine(models, n_clicks, time_clicks, t, t_times, m, levels):
                 t = (a+b)/2.
 
                 knots, degree, P = insert_knot_bspline_curve( model.knots,
-                                                      model.degree,
-                                                      model.points,
-                                                      t, times=1 )
+                                                              model.degree,
+                                                              model.points,
+                                                              t, times=1 )
 
                 model = SplineCurve(knots=knots, degree=degree, points=P)
     # ...
