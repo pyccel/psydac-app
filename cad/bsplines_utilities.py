@@ -49,14 +49,32 @@ def all_bsplines( knots, degree, x, span ):
 # ==========================================================
 def point_on_bspline_curve(knots, P, x):
     degree = len(knots) - len(P) - 1
+    d = P.shape[-1]
 
     span = find_span( knots, degree, x )
     b    = all_bsplines( knots, degree, x, span )
 
-    c = 0.
+    c = np.zeros(d)
     for k in range(0, degree+1):
-        c += b[k]*P[span-degree+k]
+        c[:] += b[k]*P[span-degree+k,:]
     return c
+
+# ==========================================================
+def point_on_nurbs_curve(knots, P, W, x):
+    # weithed control points in d + 1
+    n = P.shape[0]
+    d = P.shape[1]
+    Pw = np.zeros((n,d+1))
+    for i in range(0, n):
+        Pw[i,:d] = W[i]*P[i,:]
+        Pw[i,d]  = W[i]
+
+    Qw = point_on_bspline_curve(knots, Pw, x)
+
+    Q = np.zeros(d)
+    Q[:] = Qw[:d]/Qw[d]
+
+    return Q
 
 # ==========================================================
 def translate_curve(knots, P, displacement):
@@ -124,7 +142,7 @@ def plot_curve(knots, degree, P, color='b', label='P', with_ctrl_pts=True):
             plt.text(x+0.05,y+0.05,'$\mathbf{'+label+'}_{' + str(i) + '}$')
 
 # ==========================================================
-def curve_insert_knot(knots, degree, P, t, times=1):
+def insert_knot_bspline_curve(knots, degree, P, t, times=1):
     """Insert the knots t times in the B-Spline curve defined by (knots, degree, P)."""
     n = len(knots) - degree - 1
     n_new = n + times
@@ -175,8 +193,29 @@ def curve_insert_knot(knots, degree, P, t, times=1):
     return knots_new, degree, P_new
 
 # ==========================================================
+def insert_knot_nurbs_curve(Tu, pu, P, W, t, times=1):
+    nu = P.shape[0]
+    d  = P.shape[1]
+
+    Pw = np.zeros((nu,d+1))
+    for i in range(0, nu):
+        Pw[i,:d] = W[i]*P[i,:d]
+        Pw[i,d]  = W[i]
+
+    Tu, pu, Pw = insert_knot_bspline_curve(Tu, pu, Pw, t, times=times)
+
+    nu = Pw.shape[0]
+    P = np.zeros((nu,d))
+    W = np.zeros(nu)
+    for i in range(0, nu):
+        W[i] = Pw[i,d]
+        P[i,:d] = Pw[i,:d] / W[i]
+
+    return Tu, pu, P, W
+
+# ==========================================================
 # NOTE only true for open knot vector
-def curve_elevate_degree(U_in, p_in, P_in, m=1):
+def elevate_degree_bspline_curve(U_in, p_in, P_in, m=1):
     """elevate the B-Spline degree m times in the B-Spline curve defined by (U_in, degree, P)."""
     # ...
     U_in = list(U_in) # since we will use count method for list
@@ -291,9 +330,32 @@ def curve_elevate_degree(U_in, p_in, P_in, m=1):
     return U_out, p_out, P_out
 
 # ==========================================================
+def elevate_degree_nurbs_curve(Tu, pu, P, W, m=1):
+    nu = P.shape[0]
+    d  = P.shape[1]
+
+    Pw = np.zeros((nu,d+1))
+    for i in range(0, nu):
+        Pw[i,:d] = W[i]*P[i,:d]
+        Pw[i,d]  = W[i]
+
+    Tu, pu, Pw = elevate_degree_bspline_curve(Tu, pu, Pw, m=m)
+
+    nu = Pw.shape[0]
+    P = np.zeros((nu,d))
+    W = np.zeros(nu)
+    for i in range(0, nu):
+        W[i] = Pw[i,d]
+        P[i,:d] = Pw[i,:d] / W[i]
+
+    return Tu, pu, P, W
+
+
+# ==========================================================
 def point_on_bspline_surface(Tu, Tv, P, u, v):
     pu = len(Tu) - P.shape[0] - 1
     pv = len(Tv) - P.shape[1] - 1
+    d = P.shape[-1]
 
     span_u = find_span( Tu, pu, u )
     span_v = find_span( Tv, pv, v )
@@ -301,15 +363,34 @@ def point_on_bspline_surface(Tu, Tv, P, u, v):
     bu   = all_bsplines( Tu, pu, u, span_u )
     bv   = all_bsplines( Tv, pv, v, span_v )
 
-    c = 0.
+    c = np.zeros(d)
     for ku in range(0, pu+1):
         for kv in range(0, pv+1):
-            c += bu[ku]*bv[kv]*P[span_u-pu+ku, span_v-pv+kv]
+            c[:] += bu[ku]*bv[kv]*P[span_u-pu+ku, span_v-pv+kv,:]
 
     return c
 
 # ==========================================================
-def surface_insert_knot(Tu, Tv, pu, pv, P, t, times=1, axis=None):
+def point_on_nurbs_surface(Tu, Tv, P, W, u, v):
+    nu = P.shape[0]
+    nv = P.shape[1]
+    d  = P.shape[2]
+
+    Pw = np.zeros((nu,nv,d+1))
+    for i in range(0, nu):
+        for j in range(0, nv):
+            Pw[i,j,:d] = W[i,j]*P[i,j,:d]
+            Pw[i,j,d]  = W[i,j]
+
+    Qw = point_on_bspline_surface(Tu, Tv, Pw, u, v)
+
+    Q = np.zeros(d)
+    Q[:] = Qw[:d]/Qw[d]
+
+    return Q
+
+# ==========================================================
+def insert_knot_bspline_surface(Tu, Tv, pu, pv, P, t, times=1, axis=None):
     if axis is None:
         axis = [0, 1]
 
@@ -320,12 +401,12 @@ def surface_insert_knot(Tu, Tv, pu, pv, P, t, times=1, axis=None):
         nv = P.shape[1]
 
         j = 0
-        T, d, R = curve_insert_knot(Tu, pu, P[:,j,:], t, times=times)
+        T, d, R = insert_knot_bspline_curve(Tu, pu, P[:,j,:], t, times=times)
         Q = np.zeros((R.shape[0], P.shape[1], P.shape[2]))
         Q[:,j,:] = R[:,:]
 
         for j in range(1,nv):
-            tdr = curve_insert_knot(Tu, pu, P[:,j,:], t, times=times)
+            tdr = insert_knot_bspline_curve(Tu, pu, P[:,j,:], t, times=times)
             Q[:,j,:] = tdr[2][:,:]
 
         Tu = T
@@ -335,15 +416,41 @@ def surface_insert_knot(Tu, Tv, pu, pv, P, t, times=1, axis=None):
         nu = P.shape[0]
 
         i = 0
-        T, d, R = curve_insert_knot(Tv, pv, P[i,:,:], t, times=times)
+        T, d, R = insert_knot_bspline_curve(Tv, pv, P[i,:,:], t, times=times)
         Q = np.zeros((P.shape[0], R.shape[0], P.shape[2]))
         Q[i,:,:] = R[:,:]
 
         for i in range(1,nu):
-            tdr = curve_insert_knot(Tv, pv, P[i,:,:], t, times=times)
+            tdr = insert_knot_bspline_curve(Tv, pv, P[i,:,:], t, times=times)
             Q[i,:,:] = tdr[2][:,:]
 
         Tv = T
         P  = Q
 
     return Tu, Tv, pu, pv, P
+
+# ==========================================================
+def insert_knot_nurbs_surface(Tu, Tv, pu, pv, P, W, t, times=1, axis=None):
+    nu = P.shape[0]
+    nv = P.shape[1]
+    d  = P.shape[2]
+
+    Pw = np.zeros((nu,nv,d+1))
+    for i in range(0, nu):
+        for j in range(0, nv):
+            Pw[i,j,:d] = W[i,j]*P[i,j,:d]
+            Pw[i,j,d]  = W[i,j]
+
+    Tu, Tv, pu, pv, Pw = insert_knot_bspline_surface(Tu, Tv, pu, pv, Pw, t, times=times, axis=axis)
+
+    nu = Pw.shape[0]
+    nv = Pw.shape[1]
+    P = np.zeros((nu,nv,d))
+    W = np.zeros((nu,nv))
+    for i in range(0, nu):
+        for j in range(0, nv):
+            W[i,j] = Pw[i,j,d]
+            P[i,j,:d] = Pw[i,j,:d] / W[i,j]
+
+    return Tu, Tv, pu, pv, P, W
+

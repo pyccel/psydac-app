@@ -16,15 +16,25 @@ from collections import OrderedDict
 from collections import namedtuple
 
 from bsplines_utilities import point_on_bspline_curve
-from bsplines_utilities import curve_insert_knot
-from bsplines_utilities import curve_elevate_degree
 from bsplines_utilities import point_on_bspline_surface
-from bsplines_utilities import surface_insert_knot
-#from bsplines_utilities import surface_elevate_degree
+from bsplines_utilities import insert_knot_bspline_curve
+from bsplines_utilities import elevate_degree_bspline_curve
+from bsplines_utilities import insert_knot_bspline_surface
+#from bsplines_utilities import elevate_degree_bspline_surface
+
+from bsplines_utilities import point_on_nurbs_curve
+from bsplines_utilities import point_on_nurbs_surface
+from bsplines_utilities import insert_knot_nurbs_curve
+from bsplines_utilities import insert_knot_nurbs_surface
+from bsplines_utilities import elevate_degree_nurbs_curve
+
 
 SplineCurve   = namedtuple('SplineCurve',   'knots, degree, points')
 SplineSurface = namedtuple('SplineSurface', 'knots, degree, points')
 SplineVolume  = namedtuple('SplineVolume',  'knots, degree, points')
+NurbsCurve    = namedtuple('NurbsCurve',    'knots, degree, points, weights')
+NurbsSurface  = namedtuple('NurbsSurface',  'knots, degree, points, weights')
+NurbsVolume   = namedtuple('NurbsVolume',   'knots, degree, points, weights')
 
 namespace = OrderedDict()
 model_id = 0
@@ -41,6 +51,57 @@ def make_line(origin=(0.,0.), end=(1.,0.)):
     P[:, 1] = [origin[1], end[1]]
 
     return SplineCurve(knots=knots, degree=degree, points=P)
+
+def make_arc(center=(0.,0.), radius=1., angle=90.):
+    if angle == 90.:
+        knots  = [0., 0., 0., 1., 1., 1.]
+        degree = 2
+        n      = len(knots) - degree - 1
+
+        P = np.zeros((n, 2))
+        P[:, 0] = [1., 1., 0.]
+        P[:, 1] = [0., 1., 1.]
+
+        # weights
+        s2 = 1./np.sqrt(2)
+        W = np.zeros(n)
+        W[:] = [1., s2, 1.]
+
+    elif angle == 120.:
+        knots  = [0., 0., 0., 1., 1., 1.]
+        degree = 2
+        n      = len(knots) - degree - 1
+
+        P = np.zeros((n, 2))
+        a = np.cos(np.pi/6.)
+        P[:, 0] = [ a, 0., -a]
+        P[:, 1] = [.5, 2., .5]
+
+        # weights
+        W = np.zeros(n)
+        W[:] = [1., 1./2., 1.]
+
+    elif angle == 180.:
+        knots  = [0., 0., 0., 0., 1., 1., 1., 1.]
+        degree = 3
+        n      = len(knots) - degree - 1
+
+        P = np.zeros((n, 2))
+        P[:, 0] = [1., 1., -1., -1.]
+        P[:, 1] = [0., 2.,  2.,  0.]
+
+        # weights
+        W = np.zeros(n)
+        W[:] = [1., 1./3., 1./3., 1.]
+
+    else:
+        raise NotImplementedError('TODO, given {}'.format(angle))
+
+    P *= radius
+    P[:,0] += center[0]
+    P[:,1] += center[1]
+
+    return NurbsCurve(knots=knots, degree=degree, points=P, weights=W)
 
 def make_square(origin=(0,0), length=1.):
     Tu  = [0., 0., 1., 1.]
@@ -71,6 +132,7 @@ def make_circle(center=(0.,0.), radius=1.):
     gridu = np.unique(Tu)
     gridv = np.unique(Tv)
 
+
     s = 1./np.sqrt(2)
     P          = np.zeros((nu,nv,2))
     P[0,0,:]   = np.asarray([-s   , -s   ])
@@ -87,7 +149,18 @@ def make_circle(center=(0.,0.), radius=1.):
     P[:,:,0] += center[0]
     P[:,:,1] += center[1]
 
-    return SplineSurface(knots=(Tu, Tv), degree=(pu, pv), points=P)
+    W       = np.zeros((3,3))
+    W[0,0]  = 1.
+    W[1,0]  = s
+    W[2,0]  = 1.
+    W[0,1]  = s
+    W[1,1]  = 1.
+    W[2,1]  = s
+    W[0,2]  = 1.
+    W[1,2]  = s
+    W[2,2]  = 1.
+
+    return NurbsSurface(knots=(Tu, Tv), degree=(pu, pv), points=P, weights=W)
 # ...
 
 # ...
@@ -102,8 +175,15 @@ def plot_curve(crv, nx=101):
     xs = np.linspace(0., 1., nx)
 
     Q = np.zeros((nx, 2))
-    for i,x in enumerate(xs):
-        Q[i,:] = point_on_bspline_curve(knots, P, x)
+
+    if isinstance(crv, SplineCurve):
+        for i,x in enumerate(xs):
+            Q[i,:] = point_on_bspline_curve(knots, P, x)
+
+    elif isinstance(crv, NurbsCurve):
+        W = crv.weights
+        for i,x in enumerate(xs):
+            Q[i,:] = point_on_nurbs_curve(knots, P, W, x)
 
     x = Q[:,0] ; y = Q[:,1]
 
@@ -148,9 +228,16 @@ def plot_surface(srf, Nu=101, Nv=101):
 
     # ...
     Q = np.zeros((len(gridu), Nv, 2))
-    for i,u in enumerate(gridu):
-        for j,v in enumerate(vs):
-            Q[i,j,:] = point_on_bspline_surface(Tu, Tv, P, u, v)
+    if isinstance(srf, SplineSurface):
+        for i,u in enumerate(gridu):
+            for j,v in enumerate(vs):
+                Q[i,j,:] = point_on_bspline_surface(Tu, Tv, P, u, v)
+
+    elif isinstance(srf, NurbsSurface):
+        W = srf.weights
+        for i,u in enumerate(gridu):
+            for j,v in enumerate(vs):
+                Q[i,j,:] = point_on_nurbs_surface(Tu, Tv, P, W, u, v)
 
     for i in range(len(gridu)):
         lines += [go.Scatter(mode = 'lines', line=line_marker,
@@ -161,9 +248,16 @@ def plot_surface(srf, Nu=101, Nv=101):
 
     # ...
     Q = np.zeros((Nu, len(gridv), 2))
-    for i,u in enumerate(us):
-        for j,v in enumerate(gridv):
-            Q[i,j,:] = point_on_bspline_surface(Tu, Tv, P, u, v)
+    if isinstance(srf, SplineSurface):
+        for i,u in enumerate(us):
+            for j,v in enumerate(gridv):
+                Q[i,j,:] = point_on_bspline_surface(Tu, Tv, P, u, v)
+
+    elif isinstance(srf, NurbsSurface):
+        W = srf.weights
+        for i,u in enumerate(us):
+            for j,v in enumerate(gridv):
+                Q[i,j,:] = point_on_nurbs_surface(Tu, Tv, P, W, u, v)
 
     for j in range(len(gridv)):
         lines += [go.Scatter(mode = 'lines', line=line_marker,
@@ -202,18 +296,19 @@ tab_arc = dcc.Tab(label='arc', children=[
                                         value='',
                                         type='text'
                               ),
-                              html.Label('origin'),
-                              dcc.Input(id='arc_origin',
+                              html.Label('radius'),
+                              dcc.Input(id='arc_radius',
                                         placeholder='Enter a value ...',
                                         value='',
                                         type='text'
                               ),
                               html.Label('angle'),
-                              dcc.Input(id='arc_angle',
-                                        placeholder='Enter a value ...',
-                                        value='',
-                                        type='text'
-                              ),
+                              dcc.Dropdown(id="arc_angle",
+                                           options=[{'label': '90', 'value': '90'},
+                                                    {'label': '120', 'value': '120'},
+                                                    {'label': '180', 'value': '180'}],
+                                           value=[],
+                                           multi=False),
 ])
 
 # =================================================================
@@ -469,6 +564,9 @@ app.layout = html.Div([
     [Input('button_load', 'n_clicks'),
      Input('line_origin', 'value'),
      Input('line_end', 'value'),
+     Input('arc_center', 'value'),
+     Input('arc_radius', 'value'),
+     Input('arc_angle', 'value'),
      Input('square_origin', 'value'),
      Input('square_length', 'value'),
      Input('circle_center', 'value'),
@@ -476,6 +574,7 @@ app.layout = html.Div([
 )
 def load_model(n_clicks,
                line_origin, line_end,
+               arc_center, arc_radius, arc_angle,
                square_origin, square_length,
                circle_center, circle_radius):
 
@@ -501,6 +600,36 @@ def load_model(n_clicks,
 
         spl = make_line(origin=line_origin,
                         end=line_end)
+
+    elif not( arc_center is '' ) and not( arc_radius is '' ) and arc_angle:
+        # ...
+        try:
+            arc_center = [float(i) for i in arc_center.split(',')]
+
+        except:
+            raise ValueError('Cannot convert arc_center')
+        # ...
+
+        # ...
+        try:
+            arc_radius = float(arc_radius)
+
+        except:
+            raise ValueError('Cannot convert arc_radius')
+        # ...
+
+        # ...
+        try:
+            arc_angle = float(arc_angle)
+
+        except:
+            raise ValueError('Cannot convert arc_angle')
+        # ...
+
+        spl = make_arc(center=arc_center,
+                       radius=arc_radius,
+                       angle=arc_angle)
+
 
     elif not( square_origin is '' ) and not( square_length is '' ):
         # ...
@@ -582,21 +711,37 @@ def apply_refine(models, n_clicks, time_clicks, t, t_times, m, levels):
         times = int(t_times)
         t = float(t)
 
-        if isinstance(model, SplineCurve):
+        if isinstance(model, (SplineCurve, NurbsCurve)):
             t_min = model.knots[ model.degree]
             t_max = model.knots[-model.degree]
             if t > t_min and t < t_max:
-                knots, degree, P = curve_insert_knot( model.knots,
-                                                      model.degree,
-                                                      model.points,
-                                                      t, times=times )
+                if isinstance(model, SplineCurve):
+                    knots, degree, P = insert_knot_bspline_curve( model.knots,
+                                                          model.degree,
+                                                          model.points,
+                                                          t, times=times )
 
-                model = SplineCurve(knots=knots, degree=degree, points=P)
+                    model = SplineCurve(knots=knots,
+                                        degree=degree,
+                                        points=P)
+
+                elif isinstance(model, NurbsCurve):
+                    knots, degree, P, W = insert_knot_nurbs_curve( model.knots,
+                                                                model.degree,
+                                                                model.points,
+                                                                model.weights,
+                                                                t, times=times )
+
+                    model = NurbsCurve(knots=knots,
+                                       degree=degree,
+                                       points=P,
+                                       weights=W)
+
 
                 if not( n_clicks is None ):
                     namespace[name] = model
 
-        elif isinstance(model, SplineSurface):
+        elif isinstance(model, (SplineSurface, NurbsSurface)):
             u_min = model.knots[0][ model.degree[0]]
             u_max = model.knots[0][-model.degree[0]]
             v_min = model.knots[1][ model.degree[1]]
@@ -604,13 +749,29 @@ def apply_refine(models, n_clicks, time_clicks, t, t_times, m, levels):
             condition = False
             # TODO
             if t > u_min and t < u_max:
-                Tu, Tv, pu, pv, P = surface_insert_knot( *model.knots,
-                                                         *model.degree,
-                                                          model.points,
-                                                         t, times=times,
-                                                         axis=None)
+                if isinstance(model, SplineSurface):
+                    Tu, Tv, pu, pv, P = insert_knot_bspline_surface( *model.knots,
+                                                                     *model.degree,
+                                                                      model.points,
+                                                                      t,
+                                                                      times=times,
+                                                                      axis=None)
 
-                model = SplineSurface(knots=(Tu, Tv), degree=(pu, pv), points=P)
+                    model = SplineSurface(knots=(Tu, Tv), degree=(pu, pv), points=P)
+
+                elif isinstance(model, NurbsSurface):
+                    Tu, Tv, pu, pv, P, W = insert_knot_nurbs_surface( *model.knots,
+                                                                      *model.degree,
+                                                                       model.points,
+                                                                       model.weights,
+                                                                       t,
+                                                                       times=times,
+                                                                       axis=None)
+
+                    model = NurbsSurface(knots=(Tu, Tv),
+                                         degree=(pu, pv),
+                                         points=P,
+                                         weights=W)
     # ...
 
     # ... degree elevation
@@ -618,12 +779,26 @@ def apply_refine(models, n_clicks, time_clicks, t, t_times, m, levels):
         m = int(m)
 
         if isinstance(model, SplineCurve):
-            knots, degree, P = curve_elevate_degree( model.knots,
-                                                     model.degree,
-                                                     model.points,
-                                                     m=m)
+            knots, degree, P = elevate_degree_bspline_curve( model.knots,
+                                                             model.degree,
+                                                             model.points,
+                                                             m=m)
 
-            model = SplineCurve(knots=knots, degree=degree, points=P)
+            model = SplineCurve(knots=knots,
+                                degree=degree,
+                                points=P)
+
+        elif isinstance(model, NurbsCurve):
+            knots, degree, P, W = elevate_degree_nurbs_curve( model.knots,
+                                                              model.degree,
+                                                              model.points,
+                                                              model.weights,
+                                                              m=m)
+
+            model = NurbsCurve(knots=knots,
+                               degree=degree,
+                               points=P,
+                               weights=W)
     # ...
 
     # ...subdivision
@@ -635,7 +810,7 @@ def apply_refine(models, n_clicks, time_clicks, t, t_times, m, levels):
             for a,b in zip(grid[:-1], grid[1:]):
                 t = (a+b)/2.
 
-                knots, degree, P = curve_insert_knot( model.knots,
+                knots, degree, P = insert_knot_bspline_curve( model.knots,
                                                       model.degree,
                                                       model.points,
                                                       t, times=1 )
@@ -671,25 +846,57 @@ def update_namespace(loaded_model, refined_model):
         options = [{'label':name, 'value':name} for name in namespace.keys()]
         return options, clear_load, clear_refine
 
-    knots, degree, points = data
+    # ...
+    weights = None
+    try:
+        knots, degree, points = data
+
+        points = np.asarray(points)
+
+    except:
+        try:
+            knots, degree, points, weights = data
+
+            points = np.asarray(points)
+            weights = np.asarray(weights)
+
+        except:
+            raise ValueError('Could not retrieve data')
+    # ...
+
     if isinstance(knots, (tuple, list)):
         knots = [np.asarray(T) for T in knots]
 
-    points = np.asarray(points)
-
     if isinstance(degree, int):
-        current_model = SplineCurve(knots=knots,
-                                    degree=degree,
-                                    points=points)
+        if weights is None:
+            current_model = SplineCurve(knots=knots,
+                                        degree=degree,
+                                        points=points)
+
+        else:
+            current_model = NurbsCurve(knots=knots,
+                                       degree=degree,
+                                       points=points,
+                                       weights=weights)
 
     elif len(degree) == 2:
-        current_model = SplineSurface(knots=knots,
-                                      degree=degree,
-                                      points=points)
+        if weights is None:
+            current_model = SplineSurface(knots=knots,
+                                          degree=degree,
+                                          points=points)
 
+        else:
+            current_model = NurbsSurface(knots=knots,
+                                         degree=degree,
+                                         points=points,
+                                         weights=weights)
+
+
+    # ...
     global model_id
     namespace['model_{}'.format(model_id)] = current_model
     model_id += 1
+    # ...
 
     options = [{'label':name, 'value':name} for name in namespace.keys()]
 
@@ -721,10 +928,10 @@ def update_graph(models):
     # ...
     traces = []
     for model in models:
-        if isinstance(model, SplineCurve):
+        if isinstance(model, (SplineCurve, NurbsCurve)):
             traces += plot_curve(model, nx=101)
 
-        elif isinstance(model, SplineSurface):
+        elif isinstance(model, (SplineSurface, NurbsSurface)):
             traces += plot_surface(model, Nu=101, Nv=101)
 
         else:
