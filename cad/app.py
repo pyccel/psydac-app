@@ -52,6 +52,10 @@ d_timestamp['square']   = -10000
 d_timestamp['circle']   = -10000
 d_timestamp['cube']     = -10000
 d_timestamp['cylinder'] = -10000
+
+d_timestamp['insert']    = -10000
+d_timestamp['elevate']   = -10000
+d_timestamp['subdivide'] = -10000
 # ...
 
 # ... TODO to be moved to gallery
@@ -470,6 +474,8 @@ tab_insert_knot = dcc.Tab(label='Insert knot', children=[
                                                min=1,
                                                value=1
                               ),
+                              html.Button('Submit', id='insert_submit',
+                                          n_clicks_timestamp=0),
                           ]),
 ])
 
@@ -481,6 +487,8 @@ tab_elevate_degree = dcc.Tab(label='Elevate degree', children=[
                                                   min=0,
                                                   value=0
                                  ),
+                              html.Button('Submit', id='elevate_submit',
+                                          n_clicks_timestamp=0),
                              ]),
 ])
 
@@ -492,6 +500,8 @@ tab_subdivision = dcc.Tab(label='Subdivision', children=[
                                                   min=0,
                                                   value=0
                                  ),
+                              html.Button('Submit', id='subdivide_submit',
+                                          n_clicks_timestamp=0),
                              ]),
 ])
 
@@ -773,10 +783,20 @@ def load_model(time_clicks,
      Input('button_refine', 'n_clicks_timestamp'),
      Input('insert_knot_value', 'value'),
      Input('insert_knot_times', 'value'),
+     Input('insert_submit', 'n_clicks_timestamp'),
      Input('elevate_degree_times', 'value'),
-     Input('subdivision_times', 'value')]
+     Input('elevate_submit', 'n_clicks_timestamp'),
+     Input('subdivision_times', 'value'),
+     Input('subdivide_submit', 'n_clicks_timestamp')]
 )
-def apply_refine(models, time_clicks, t, t_times, m, levels):
+def apply_refine(models,
+                 time_clicks,
+                 t, t_times,
+                 insert_submit_time,
+                 m,
+                 elevate_submit_time,
+                 levels,
+                 subdivide_submit_time):
 
     global d_timestamp
 
@@ -795,7 +815,7 @@ def apply_refine(models, time_clicks, t, t_times, m, levels):
     model = namespace[name]
 
     # ... insert knot
-    if not( t is '' ):
+    if not( t is '' ) and not( insert_submit_time <= d_timestamp['insert'] ):
         times = int(t_times)
         t = float(t)
 
@@ -825,9 +845,6 @@ def apply_refine(models, time_clicks, t, t_times, m, levels):
                                        points=P,
                                        weights=W)
 
-
-                if not( n_clicks is None ):
-                    namespace[name] = model
 
         elif isinstance(model, (SplineSurface, NurbsSurface)):
             u_min = model.knots[0][ model.degree[0]]
@@ -860,10 +877,12 @@ def apply_refine(models, time_clicks, t, t_times, m, levels):
                                          degree=(pu, pv),
                                          points=P,
                                          weights=W)
+
+        d_timestamp['insert'] = insert_submit_time
     # ...
 
     # ... degree elevation
-    if m > 0:
+    if m > 0 and not( elevate_submit_time <= d_timestamp['elevate'] ) :
         m = int(m)
 
         if isinstance(model, SplineCurve):
@@ -887,10 +906,12 @@ def apply_refine(models, time_clicks, t, t_times, m, levels):
                                degree=degree,
                                points=P,
                                weights=W)
+
+        d_timestamp['elevate'] = elevate_submit_time
     # ...
 
     # ...subdivision
-    if levels > 0:
+    if levels > 0 and not( subdivide_submit_time <= d_timestamp['subdivide'] ):
         levels = int(levels)
 
         for level in range(levels):
@@ -904,6 +925,8 @@ def apply_refine(models, time_clicks, t, t_times, m, levels):
                                                               t, times=1 )
 
                 model = SplineCurve(knots=knots, degree=degree, points=P)
+
+        d_timestamp['subdivide'] = subdivide_submit_time
     # ...
 
     print('refinement done')
