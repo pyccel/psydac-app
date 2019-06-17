@@ -36,9 +36,23 @@ NurbsCurve    = namedtuple('NurbsCurve',    'knots, degree, points, weights')
 NurbsSurface  = namedtuple('NurbsSurface',  'knots, degree, points, weights')
 NurbsVolume   = namedtuple('NurbsVolume',   'knots, degree, points, weights')
 
+# ... global variables
 namespace = OrderedDict()
 model_id = 0
-timestamp_refine = -100
+# ...
+
+# ... global dict for time stamps
+d_timestamp = OrderedDict()
+d_timestamp['load'] = -10000
+d_timestamp['refine'] = -10000
+
+d_timestamp['line']     = -10000
+d_timestamp['arc']      = -10000
+d_timestamp['square']   = -10000
+d_timestamp['circle']   = -10000
+d_timestamp['cube']     = -10000
+d_timestamp['cylinder'] = -10000
+# ...
 
 # ... TODO to be moved to gallery
 def make_line(origin=(0.,0.), end=(1.,0.)):
@@ -312,6 +326,9 @@ tab_line = dcc.Tab(label='line', children=[
                                         value='',
                                         type='text'
                               ),
+                              html.Button('Submit', id='line_submit',
+                                          n_clicks_timestamp=0),
+
 ])
 
 # =================================================================
@@ -335,6 +352,8 @@ tab_arc = dcc.Tab(label='arc', children=[
                                                     {'label': '180', 'value': '180'}],
                                            value=[],
                                            multi=False),
+                              html.Button('Submit', id='arc_submit',
+                                          n_clicks_timestamp=0),
 ])
 
 # =================================================================
@@ -351,6 +370,8 @@ tab_square = dcc.Tab(label='square', children=[
                                         value='',
                                         type='text'
                               ),
+                              html.Button('Submit', id='square_submit',
+                                          n_clicks_timestamp=0),
 ])
 
 # =================================================================
@@ -367,6 +388,8 @@ tab_circle = dcc.Tab(label='circle', children=[
                                         value='',
                                         type='text'
                               ),
+                              html.Button('Submit', id='circle_submit',
+                                          n_clicks_timestamp=0),
 ])
 
 # =================================================================
@@ -377,6 +400,8 @@ tab_cube = dcc.Tab(label='cube', children=[
                                         value='',
                                         type='text'
                               ),
+                              html.Button('Submit', id='cube_submit',
+                                          n_clicks_timestamp=0),
 ])
 
 # =================================================================
@@ -387,6 +412,8 @@ tab_cylinder = dcc.Tab(label='cylinder', children=[
                                         value='',
                                         type='text'
                               ),
+                              html.Button('Submit', id='cylinder_submit',
+                                          n_clicks_timestamp=0),
 ])
 
 # =================================================================
@@ -416,7 +443,8 @@ tab_geometry_3d = dcc.Tab(label='3D', children=[
 
 # =================================================================
 tab_loader = dcc.Tab(label='Load', children=[
-                     html.Button('load', id='button_load'),
+                     html.Button('load', id='button_load',
+                                 n_clicks_timestamp=0),
                      dcc.Store(id='loaded_model'),
                      dcc.Tabs(children=[
                               tab_geometry_1d,
@@ -535,7 +563,8 @@ tab_transformation = dcc.Tab(label='Transformation', children=[
 # =================================================================
 names = ['i', 'j', 'x', 'y']
 tab_editor = dcc.Tab(label='Editor', children=[
-                     html.Button('Edit', id='button_editor'),
+                     html.Button('Edit', id='button_editor',
+                                 n_clicks_timestamp=0),
                      dcc.Store(id='edit_model'),
                      html.Div([
                          dash_table.DataTable(id='editor',
@@ -591,27 +620,42 @@ app.layout = html.Div([
 # =================================================================
 @app.callback(
     Output("loaded_model", "data"),
-    [Input('button_load', 'n_clicks'),
+    [Input('button_load', 'n_clicks_timestamp'),
      Input('line_origin', 'value'),
-     Input('line_end', 'value'),
+     Input('line_end',    'value'),
+     Input('line_submit', 'n_clicks_timestamp'),
      Input('arc_center', 'value'),
      Input('arc_radius', 'value'),
-     Input('arc_angle', 'value'),
+     Input('arc_angle',  'value'),
+     Input('arc_submit', 'n_clicks_timestamp'),
      Input('square_origin', 'value'),
      Input('square_length', 'value'),
+     Input('square_submit', 'n_clicks_timestamp'),
      Input('circle_center', 'value'),
-     Input('circle_radius', 'value')]
+     Input('circle_radius', 'value'),
+     Input('circle_submit', 'n_clicks_timestamp')]
 )
-def load_model(n_clicks,
+def load_model(time_clicks,
                line_origin, line_end,
+               line_submit_time,
                arc_center, arc_radius, arc_angle,
+               arc_submit_time,
                square_origin, square_length,
-               circle_center, circle_radius):
+               square_submit_time,
+               circle_center, circle_radius,
+               circle_submit_time):
 
-    if n_clicks is None:
+    global d_timestamp
+
+    if time_clicks <= d_timestamp['load']:
         return None
 
-    if not( line_origin is '' ) and not( line_end is '' ):
+    d_timestamp['load'] = time_clicks
+
+    if ( not( line_origin is '' ) and
+         not( line_end is '' ) and
+         not( line_submit_time <= d_timestamp['line'] )
+       ):
         # ...
         try:
             line_origin = [float(i) for i in line_origin.split(',')]
@@ -628,10 +672,16 @@ def load_model(n_clicks,
             raise ValueError('Cannot convert line_end')
         # ...
 
-        spl = make_line(origin=line_origin,
-                        end=line_end)
+        d_timestamp['line'] = line_submit_time
 
-    elif not( arc_center is '' ) and not( arc_radius is '' ) and arc_angle:
+        return make_line(origin=line_origin,
+                         end=line_end)
+
+    elif ( not( arc_center is '' ) and
+           not( arc_radius is '' ) and
+           arc_angle and
+           not( arc_submit_time <= d_timestamp['arc'] )
+         ):
         # ...
         try:
             arc_center = [float(i) for i in arc_center.split(',')]
@@ -656,12 +706,17 @@ def load_model(n_clicks,
             raise ValueError('Cannot convert arc_angle')
         # ...
 
-        spl = make_arc(center=arc_center,
-                       radius=arc_radius,
-                       angle=arc_angle)
+        d_timestamp['arc'] = arc_submit_time
+
+        return make_arc(center=arc_center,
+                        radius=arc_radius,
+                        angle=arc_angle)
 
 
-    elif not( square_origin is '' ) and not( square_length is '' ):
+    elif ( not( square_origin is '' ) and
+           not( square_length is '' ) and
+           not( square_submit_time <= d_timestamp['square'] )
+        ):
         # ...
         try:
             square_origin = [float(i) for i in square_origin.split(',')]
@@ -678,10 +733,15 @@ def load_model(n_clicks,
             raise ValueError('Cannot convert square_length')
         # ...
 
-        spl = make_square(origin=square_origin,
-                          length=square_length)
+        d_timestamp['square'] = square_submit_time
 
-    elif not( circle_center is '' ) and  not( circle_radius is '' ):
+        return make_square(origin=square_origin,
+                           length=square_length)
+
+    elif ( not( circle_center is '' ) and
+           not( circle_radius is '' ) and
+           not( circle_submit_time <= d_timestamp['circle'] )
+         ):
         # ...
         try:
             circle_center = [float(i) for i in circle_center.split(',')]
@@ -698,34 +758,32 @@ def load_model(n_clicks,
             raise ValueError('Cannot convert circle_radius')
         # ...
 
-        spl = make_circle(center=circle_center,
-                          radius=circle_radius)
+        d_timestamp['circle'] = circle_submit_time
+
+        return make_circle(center=circle_center,
+                           radius=circle_radius)
 
     else:
-        raise NotImplementedError('TODO')
-
-    print('load done')
-    return spl
+        return None
 
 # =================================================================
 @app.callback(
     Output("refined_model", "data"),
     [Input("model", "value"),
-     Input('button_refine', 'n_clicks'),
      Input('button_refine', 'n_clicks_timestamp'),
      Input('insert_knot_value', 'value'),
      Input('insert_knot_times', 'value'),
      Input('elevate_degree_times', 'value'),
      Input('subdivision_times', 'value')]
 )
-def apply_refine(models, n_clicks, time_clicks, t, t_times, m, levels):
+def apply_refine(models, time_clicks, t, t_times, m, levels):
 
-    global timestamp_refine
+    global d_timestamp
 
-    if n_clicks is None or time_clicks <= timestamp_refine:
+    if time_clicks <= d_timestamp['refine']:
         return None
 
-    timestamp_refine = time_clicks
+    d_timestamp['refine'] = time_clicks
 
     if len(models) == 0:
         return None
