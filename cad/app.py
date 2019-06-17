@@ -15,6 +15,7 @@ from scipy.cluster.vq import vq, kmeans, whiten
 from collections import OrderedDict
 from collections import namedtuple
 
+# bsplines
 from bsplines_utilities import point_on_bspline_curve
 from bsplines_utilities import point_on_bspline_surface
 from bsplines_utilities import insert_knot_bspline_curve
@@ -22,11 +23,22 @@ from bsplines_utilities import elevate_degree_bspline_curve
 from bsplines_utilities import insert_knot_bspline_surface
 #from bsplines_utilities import elevate_degree_bspline_surface
 
+# nurbs
 from bsplines_utilities import point_on_nurbs_curve
 from bsplines_utilities import point_on_nurbs_surface
 from bsplines_utilities import insert_knot_nurbs_curve
 from bsplines_utilities import insert_knot_nurbs_surface
 from bsplines_utilities import elevate_degree_nurbs_curve
+
+# bsplines
+from bsplines_utilities import translate_bspline_curve
+from bsplines_utilities import rotate_bspline_curve
+from bsplines_utilities import homothetic_bspline_curve
+
+# nurbs
+from bsplines_utilities import translate_nurbs_curve
+from bsplines_utilities import rotate_nurbs_curve
+from bsplines_utilities import homothetic_nurbs_curve
 
 
 SplineCurve   = namedtuple('SplineCurve',   'knots, degree, points')
@@ -43,8 +55,9 @@ model_id = 0
 
 # ... global dict for time stamps
 d_timestamp = OrderedDict()
-d_timestamp['load'] = -10000
-d_timestamp['refine'] = -10000
+d_timestamp['load']      = -10000
+d_timestamp['refine']    = -10000
+d_timestamp['transform'] = -10000
 
 d_timestamp['line']     = -10000
 d_timestamp['arc']      = -10000
@@ -56,6 +69,10 @@ d_timestamp['cylinder'] = -10000
 d_timestamp['insert']    = -10000
 d_timestamp['elevate']   = -10000
 d_timestamp['subdivide'] = -10000
+
+d_timestamp['translate']  = -10000
+d_timestamp['rotate']     = -10000
+d_timestamp['homothetie'] = -10000
 # ...
 
 # ... TODO to be moved to gallery
@@ -535,32 +552,60 @@ tab_refinement = dcc.Tab(label='Refinement', children=[
 # =================================================================
 tab_translate = dcc.Tab(label='Translate', children=[
                              html.Div([
-                                 html.H3(children='Translate'),
                                  html.Label('displacement'),
+                                 dcc.Input(id='translate_disp',
+                                           placeholder='Enter a value ...',
+                                           value='',
+                                           type='text'),
+                                 html.Button('Submit', id='translate_submit',
+                                             n_clicks_timestamp=0),
                              ]),
 ])
 
 # =================================================================
 tab_rotate = dcc.Tab(label='Rotate', children=[
                              html.Div([
-                                 html.H3(children='Rotate'),
+                                 html.Label('center'),
+                                 dcc.Input(id='rotate_center',
+                                           placeholder='Enter a value ...',
+                                           value='',
+                                           type='text'),
                                  html.Label('angle'),
+                                 dcc.Input(id='rotate_angle',
+                                           placeholder='Enter a value ...',
+                                           value='',
+                                           type='text'),
+                                 html.Button('Submit', id='rotate_submit',
+                                             n_clicks_timestamp=0),
                              ]),
 ])
 
 # =================================================================
 tab_homothetie = dcc.Tab(label='Homothetie', children=[
                              html.Div([
-                                 html.H3(children='Homothetie'),
-                                 html.Label('angle'),
+                                 html.Label('center'),
+                                 dcc.Input(id='homothetie_center',
+                                           placeholder='Enter a value ...',
+                                           value='',
+                                           type='text'),
+                                 html.Label('scale'),
+                                 dcc.Input(id='homothetie_alpha',
+                                           placeholder='Enter a value ...',
+                                           value='',
+                                           type='text'),
+                              html.Button('Submit', id='homothetie_submit',
+                                          n_clicks_timestamp=0),
                              ]),
 ])
 
 
 # =================================================================
 tab_transformation = dcc.Tab(label='Transformation', children=[
+                             dcc.Store(id='transformed_model'),
                              html.Div([
                                  # ...
+                                 html.Button('Apply', id='button_transform',
+                                             n_clicks_timestamp=0),
                                  dcc.Tabs(children=[
                                           tab_translate,
                                           tab_rotate,
@@ -619,9 +664,9 @@ app.layout = html.Div([
     dcc.Tabs(id="tabs", children=[
         tab_viewer,
         tab_loader,
-        tab_editor,
         tab_refinement,
         tab_transformation,
+        tab_editor,
     ]),
     html.Div(id='tabs-content-example')
     # ...
@@ -935,16 +980,178 @@ def apply_refine(models,
 
 # =================================================================
 @app.callback(
+    Output("transformed_model", "data"),
+    [Input("model", "value"),
+     Input('button_transform', 'n_clicks_timestamp'),
+     Input('translate_disp', 'value'),
+     Input('translate_submit', 'n_clicks_timestamp'),
+     Input('rotate_center', 'value'),
+     Input('rotate_angle', 'value'),
+     Input('rotate_submit', 'n_clicks_timestamp'),
+     Input('homothetie_alpha', 'value'),
+     Input('homothetie_center', 'value'),
+     Input('homothetie_submit', 'n_clicks_timestamp')]
+)
+def apply_transform(models,
+                    time_clicks,
+                    translate_disp,
+                    translate_submit_time,
+                    rotate_center,
+                    rotate_angle,
+                    rotate_submit_time,
+                    homothetie_alpha,
+                    homothetie_center,
+                    homothetie_submit_time):
+
+    global d_timestamp
+
+    if time_clicks <= d_timestamp['transform']:
+        return None
+
+    d_timestamp['transform'] = time_clicks
+
+    if len(models) == 0:
+        return None
+
+    if len(models) > 1:
+        return None
+
+    name  = models[0]
+    model = namespace[name]
+
+    if not( translate_disp is '' ) and not( translate_submit_time <= d_timestamp['translate'] ):
+        # ...
+        try:
+            displ = [float(i) for i in translate_disp.split(',')]
+
+        except:
+            raise ValueError('Cannot convert translate_disp')
+        # ...
+
+        displ = np.asarray(displ)
+
+        if isinstance(model, SplineCurve):
+            knots, P = translate_bspline_curve(model.knots,
+                                               model.points,
+                                               displ)
+
+            model = SplineCurve(knots=knots,
+                                degree=model.degree,
+                                points=P)
+
+        elif isinstance(model, NurbsCurve):
+            knots, P, W = translate_nurbs_curve(model.knots,
+                                                model.points,
+                                                model.weights,
+                                                displ)
+
+            model = NurbsCurve(knots=knots,
+                               degree=model.degree,
+                               points=P,
+                               weights=W)
+
+    elif not( rotate_center is '' ) and not( rotate_angle is '' ) and not( rotate_submit_time <= d_timestamp['rotate'] ):
+        # ...
+        try:
+            center = [float(i) for i in rotate_center.split(',')]
+            center = np.asarray(center)
+
+        except:
+            raise ValueError('Cannot convert rotate_center')
+        # ...
+
+        # ...
+        try:
+            angle = float(rotate_angle)
+            angle *= np.pi / 180
+
+        except:
+            raise ValueError('Cannot convert rotate_angle')
+        # ...
+
+        if isinstance(model, SplineCurve):
+            knots, P = rotate_bspline_curve(model.knots,
+                                            model.points,
+                                            angle,
+                                            center=center)
+
+            model = SplineCurve(knots=knots,
+                                degree=model.degree,
+                                points=P)
+
+        elif isinstance(model, NurbsCurve):
+            knots, P, W = rotate_nurbs_curve(model.knots,
+                                             model.points,
+                                             model.weights,
+                                             angle,
+                                             center=center)
+
+            model = NurbsCurve(knots=knots,
+                               degree=model.degree,
+                               points=P,
+                               weights=W)
+
+    elif not( homothetie_center is '' ) and not( homothetie_alpha is '' ) and not( homothetie_submit_time <= d_timestamp['homothetie'] ):
+        # ...
+        try:
+            center = [float(i) for i in homothetie_center.split(',')]
+            center = np.asarray(center)
+
+        except:
+            raise ValueError('Cannot convert homothetie_center')
+        # ...
+
+        # ...
+        try:
+            alpha = float(homothetie_alpha)
+
+        except:
+            raise ValueError('Cannot convert homothetie_alpha')
+        # ...
+
+        if isinstance(model, SplineCurve):
+            knots, P = homothetic_bspline_curve(model.knots,
+                                            model.points,
+                                            alpha,
+                                            center=center)
+
+            model = SplineCurve(knots=knots,
+                                degree=model.degree,
+                                points=P)
+
+        elif isinstance(model, NurbsCurve):
+            knots, P, W = homothetic_nurbs_curve(model.knots,
+                                             model.points,
+                                             model.weights,
+                                             alpha,
+                                             center=center)
+
+            model = NurbsCurve(knots=knots,
+                               degree=model.degree,
+                               points=P,
+                               weights=W)
+
+
+    print('transformation done')
+    return model
+
+
+# =================================================================
+@app.callback(
     [Output("model", "options"),
      Output("loaded_model", "clear_data"),
-     Output("refined_model", "clear_data")],
+     Output("refined_model", "clear_data"),
+     Output("transformed_model", "clear_data")],
     [Input('loaded_model', 'data'),
-     Input('refined_model', 'data')]
+     Input('refined_model', 'data'),
+     Input('transformed_model', 'data')]
 )
-def update_namespace(loaded_model, refined_model):
+def update_namespace(loaded_model, refined_model, transformed_model):
     data = None
-    clear_load   = False
-    clear_refine = False
+    clear_load      = False
+    clear_refine    = False
+    clear_transform = False
+
     if not( loaded_model is None ):
         data = loaded_model
         clear_load = True
@@ -953,9 +1160,13 @@ def update_namespace(loaded_model, refined_model):
         data = refined_model
         clear_refine = True
 
+    elif not( transformed_model is None ):
+        data = transformed_model
+        clear_transform = True
+
     if data is None:
         options = [{'label':name, 'value':name} for name in namespace.keys()]
-        return options, clear_load, clear_refine
+        return options, clear_load, clear_refine, clear_transform
 
     # ...
     weights = None
@@ -1011,7 +1222,7 @@ def update_namespace(loaded_model, refined_model):
 
     options = [{'label':name, 'value':name} for name in namespace.keys()]
 
-    return options, clear_load, clear_refine
+    return options, clear_load, clear_refine, clear_transform
 
 
 # =================================================================
