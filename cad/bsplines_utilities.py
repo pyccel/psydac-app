@@ -77,30 +77,36 @@ def point_on_nurbs_curve(knots, P, W, x):
     return Q
 
 # ==========================================================
-def translate_curve(knots, P, displacement):
+def translate_bspline_curve(knots, P, displacement):
     assert( P.shape[-1] == len(displacement) )
 
     n      = P.shape[0]
+    d      = P.shape[1]
     degree = len(knots) - n - 1
-    Q = np.zeros_like(P)
-    Q[:,:] = P[:,:]
+    Q = np.zeros((n,d))
     for i in range(0, n):
-        Q[i,:] += displacement
+        Q[i,:d] = P[i,:d] + displacement[:d]
 
     return knots, Q
 
 # ==========================================================
-def rotate_curve(knots, P, angle, center=[0.,0.]):
+def translate_nurbs_curve(knots, P, W, displacement):
+    knots, Q = translate_bspline_curve(knots, P, displacement)
+    return knots, Q, W
+
+# ==========================================================
+def rotate_bspline_curve(knots, P, angle, center=[0.,0.]):
     assert( P.shape[-1] == 2)
     assert( len(center) == 2)
 
     n      = P.shape[0]
+    d      = P.shape[1]
     degree = len(knots) - n - 1
 
     ca = np.cos(angle)
     sa = np.sin(angle)
 
-    Q = np.zeros_like(P)
+    Q = np.zeros((n,d))
     for i in range(0, n):
         Q[i,0] = center[0] + ca * ( P[i,0] - center[0] ) - sa * ( P[i,1] - center[1] )
         Q[i,1] = center[1] + sa * ( P[i,0] - center[0] ) + ca * ( P[i,1] - center[1] )
@@ -108,19 +114,30 @@ def rotate_curve(knots, P, angle, center=[0.,0.]):
     return knots, Q
 
 # ==========================================================
-def homothetic_curve(knots, P, alpha, center=[0.,0.]):
+def rotate_nurbs_curve(knots, P, W, angle, center=[0.,0.]):
+    knots, Q = rotate_bspline_curve(knots, P, angle, center=center)
+    return knots, Q, W
+
+# ==========================================================
+def homothetic_bspline_curve(knots, P, alpha, center=[0.,0.]):
     assert( P.shape[-1] == 2)
     assert( len(center) == 2)
 
     n      = P.shape[0]
+    d      = P.shape[1]
     degree = len(knots) - n - 1
 
-    Q = np.zeros_like(P)
+    Q = np.zeros((n,d))
     for i in range(0, n):
         Q[i,0] = center[0] + alpha * ( P[i,0] - center[0] )
         Q[i,1] = center[1] + alpha * ( P[i,1] - center[1] )
 
     return knots, Q
+
+# ==========================================================
+def homothetic_nurbs_curve(knots, P, W, alpha, center=[0.,0.]):
+    knots, Q = homothetic_bspline_curve(knots, P, alpha, center=center)
+    return knots, Q, W
 
 # ==========================================================
 def plot_curve(knots, degree, P, color='b', label='P', with_ctrl_pts=True):
@@ -454,3 +471,144 @@ def insert_knot_nurbs_surface(Tu, Tv, pu, pv, P, W, t, times=1, axis=None):
 
     return Tu, Tv, pu, pv, P, W
 
+# ==========================================================
+def elevate_degree_bspline_surface(Tu, Tv, pu, pv, P, m=1, axis=None):
+    if axis is None:
+        axis = [0, 1]
+
+    else:
+        axis = [axis]
+
+    if 0 in axis:
+        nv = P.shape[1]
+
+        j = 0
+        T, d, R = elevate_degree_bspline_curve(Tu, pu, P[:,j,:], m=m)
+        Q = np.zeros((R.shape[0], P.shape[1], P.shape[2]))
+        Q[:,j,:] = R[:,:]
+
+        for j in range(1,nv):
+            tdr = elevate_degree_bspline_curve(Tu, pu, P[:,j,:], m=m)
+            Q[:,j,:] = tdr[2][:,:]
+
+        Tu = T
+        pu = d
+        P  = Q
+
+    if 1 in axis:
+        nu = P.shape[0]
+
+        i = 0
+        T, d, R = elevate_degree_bspline_curve(Tv, pv, P[i,:,:], m=m)
+        Q = np.zeros((P.shape[0], R.shape[0], P.shape[2]))
+        Q[i,:,:] = R[:,:]
+
+        for i in range(1,nu):
+            tdr = elevate_degree_bspline_curve(Tv, pv, P[i,:,:], m=m)
+            Q[i,:,:] = tdr[2][:,:]
+
+        Tv = T
+        pv = d
+        P  = Q
+
+    return Tu, Tv, pu, pv, P
+
+# ==========================================================
+def elevate_degree_nurbs_surface(Tu, Tv, pu, pv, P, W, m=1, axis=None):
+    nu = P.shape[0]
+    nv = P.shape[1]
+    d  = P.shape[2]
+
+    Pw = np.zeros((nu,nv,d+1))
+    for i in range(0, nu):
+        for j in range(0, nv):
+            Pw[i,j,:d] = W[i,j]*P[i,j,:d]
+            Pw[i,j,d]  = W[i,j]
+
+    Tu, Tv, pu, pv, Pw = elevate_degree_bspline_surface(Tu, Tv, pu, pv, Pw, m=m, axis=axis)
+
+    nu = Pw.shape[0]
+    nv = Pw.shape[1]
+    P = np.zeros((nu,nv,d))
+    W = np.zeros((nu,nv))
+    for i in range(0, nu):
+        for j in range(0, nv):
+            W[i,j] = Pw[i,j,d]
+            P[i,j,:d] = Pw[i,j,:d] / W[i,j]
+
+    return Tu, Tv, pu, pv, P, W
+
+
+# ==========================================================
+def translate_bspline_surface(Tu, Tv, P, displacement):
+    assert( P.shape[-1] == len(displacement) )
+
+    nu     = P.shape[0]
+    nv     = P.shape[1]
+    d      = P.shape[2]
+    pu = len(Tu) - nu - 1
+    pv = len(Tv) - nv - 1
+
+    Q = np.zeros((nu, nv, d))
+    for i in range(0, nu):
+        for j in range(0, nv):
+            Q[i,j,:d] = P[i,j,:d] + displacement[:d]
+
+    return Tu, Tv, Q
+
+# ==========================================================
+def translate_nurbs_surface(Tu, Tv, P, W, displacement):
+    Tu, Tv, Q = translate_bspline_surface(Tu, Tv, P, displacement)
+    return Tu, Tv, Q, W
+
+# ==========================================================
+def rotate_bspline_surface(Tu, Tv, P, angle, center=[0.,0.]):
+    assert( P.shape[-1] == 2)
+    assert( len(center) == 2)
+
+    nu     = P.shape[0]
+    nv     = P.shape[1]
+    d      = P.shape[2]
+    pu = len(Tu) - nu - 1
+    pv = len(Tv) - nv - 1
+
+    ca = np.cos(angle)
+    sa = np.sin(angle)
+
+    Q = np.zeros((nu, nv, d))
+    for i in range(0, nu):
+        for j in range(0, nv):
+            Q[i,j,0] = center[0] + ca * ( P[i,j,0] - center[0] ) - sa * ( P[i,j,1] - center[1] )
+            Q[i,j,1] = center[1] + sa * ( P[i,j,0] - center[0] ) + ca * ( P[i,j,1] - center[1] )
+
+    return Tu, Tv, Q
+
+# ==========================================================
+def rotate_nurbs_surface(Tu, Tv, P, W, angle, center=[0.,0.]):
+    Tu, Tv, Q = rotate_bspline_surface(Tu, Tv, P, angle, center=center)
+    return Tu, Tv, Q, W
+
+# ==========================================================
+def homothetic_bspline_surface(Tu, Tv, P, alpha, center=[0.,0.]):
+    assert( P.shape[-1] == 2)
+    assert( len(center) == 2)
+
+    nu     = P.shape[0]
+    nv     = P.shape[1]
+    d      = P.shape[2]
+    pu = len(Tu) - nu - 1
+    pv = len(Tv) - nv - 1
+
+    Q = np.zeros((n,d))
+    Q = np.zeros((nu, nv, d))
+    for i in range(0, nu):
+        for j in range(0, nv):
+            Q[i,j,0] = center[0] + alpha * ( P[i,j,0] - center[0] )
+            Q[i,j,1] = center[1] + alpha * ( P[i,j,1] - center[1] )
+
+    return Tu, Tv, Q
+
+# ==========================================================
+def homothetic_nurbs_surface(Tu, Tv, P, W, alpha, center=[0.,0.]):
+    Tu, Tv, Q = homothetic_bspline_surface(Tu, Tv, P, alpha, center=center)
+    return Tu, Tv, Q, W

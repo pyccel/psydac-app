@@ -21,7 +21,7 @@ from bsplines_utilities import point_on_bspline_surface
 from bsplines_utilities import insert_knot_bspline_curve
 from bsplines_utilities import elevate_degree_bspline_curve
 from bsplines_utilities import insert_knot_bspline_surface
-#from bsplines_utilities import elevate_degree_bspline_surface
+from bsplines_utilities import elevate_degree_bspline_surface
 
 # nurbs
 from bsplines_utilities import point_on_nurbs_curve
@@ -29,6 +29,7 @@ from bsplines_utilities import point_on_nurbs_surface
 from bsplines_utilities import insert_knot_nurbs_curve
 from bsplines_utilities import insert_knot_nurbs_surface
 from bsplines_utilities import elevate_degree_nurbs_curve
+from bsplines_utilities import elevate_degree_nurbs_surface
 
 # bsplines
 from bsplines_utilities import translate_bspline_curve
@@ -489,7 +490,7 @@ tab_insert_knot = dcc.Tab(label='Insert knot', children=[
                               html.Label('times'),
                               daq.NumericInput(id='insert_knot_times',
                                                min=1,
-                                               value=1
+                                               value=0
                               ),
                               html.Button('Submit', id='insert_submit',
                                           n_clicks_timestamp=0),
@@ -951,6 +952,28 @@ def apply_refine(models,
                                degree=degree,
                                points=P,
                                weights=W)
+
+        elif isinstance(model, SplineSurface):
+            Tu, Tv, pu, pv, P = elevate_degree_bspline_surface( *model.knots,
+                                                               *model.degree,
+                                                                model.points,
+                                                                m=m)
+
+            model = SplineSurface(knots=(Tu, Tv),
+                                  degree=(pu, pv),
+                                  points=P)
+
+        elif isinstance(model, NurbsSurface):
+            Tu, Tv, pu, pv, P, W = elevate_degree_nurbs_surface( *model.knots,
+                                                                *model.degree,
+                                                                 model.points,
+                                                                 model.weights,
+                                                                 m=m)
+
+            model = NurbsSurface(knots=(Tu, Tv),
+                                 degree=(pu, pv),
+                                 points=P,
+                                 weights=W)
 
         d_timestamp['elevate'] = elevate_submit_time
     # ...
