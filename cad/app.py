@@ -59,6 +59,7 @@ d_timestamp = OrderedDict()
 d_timestamp['load']      = -10000
 d_timestamp['refine']    = -10000
 d_timestamp['transform'] = -10000
+d_timestamp['edit']      = -10000
 
 d_timestamp['line']     = -10000
 d_timestamp['arc']      = -10000
@@ -332,6 +333,56 @@ def plot_surface(srf, Nu=101, Nv=101, control_polygon=False):
     # ...
 
     return lines
+# ...
+
+# ...
+def model_from_data(data):
+    # ...
+    weights = None
+    try:
+        knots, degree, points = data
+
+        points = np.asarray(points)
+
+    except:
+        try:
+            knots, degree, points, weights = data
+
+            points = np.asarray(points)
+            weights = np.asarray(weights)
+
+        except:
+            raise ValueError('Could not retrieve data')
+    # ...
+
+    if isinstance(knots, (tuple, list)):
+        knots = [np.asarray(T) for T in knots]
+
+    if isinstance(degree, int):
+        if weights is None:
+            current_model = SplineCurve(knots=knots,
+                                        degree=degree,
+                                        points=points)
+
+        else:
+            current_model = NurbsCurve(knots=knots,
+                                       degree=degree,
+                                       points=points,
+                                       weights=weights)
+
+    elif len(degree) == 2:
+        if weights is None:
+            current_model = SplineSurface(knots=knots,
+                                          degree=degree,
+                                          points=points)
+
+        else:
+            current_model = NurbsSurface(knots=knots,
+                                         degree=degree,
+                                         points=points,
+                                         weights=weights)
+
+    return current_model
 # ...
 
 # =================================================================
@@ -617,13 +668,16 @@ tab_transformation = dcc.Tab(label='Transformation', children=[
 ])
 
 # =================================================================
-names = ['i', 'j', 'x', 'y']
 tab_editor = dcc.Tab(label='Editor', children=[
-                     html.Button('Edit', id='button_editor',
+                     html.Button('Edit', id='button_edit',
                                  n_clicks_timestamp=0),
-                     dcc.Store(id='edit_model'),
+                     dcc.Store(id='edited_model'),
                      html.Div([
-                         dash_table.DataTable(id='editor',
+                         html.Div(id='editor-Tu'),
+                         html.Div(id='editor-Tv'),
+                         html.Div(id='editor-Tw'),
+                         html.Div(id='editor-degree'),
+                         dash_table.DataTable(id='editor-table',
                                               columns=[],
                                               editable=True),
                      ])
@@ -1158,6 +1212,115 @@ def apply_transform(models,
     print('transformation done')
     return model
 
+# =================================================================
+@app.callback(
+    [Output("edited_model", "data"),
+     Output("editor-Tu", "children"),
+     Output("editor-Tv", "children"),
+     Output("editor-Tw", "children"),
+     Output("editor-degree", "children")],
+    [Input("model", "value"),
+     Input('button_edit', 'n_clicks_timestamp')]
+)
+def show_model(models,
+               time_clicks):
+
+    model = None
+    Tu = None
+    Tv = None
+    Tw = None
+    degree = None
+
+    global d_timestamp
+
+    if time_clicks <= d_timestamp['edit']:
+        return model, Tu, Tv, Tw, degree
+
+    d_timestamp['edit'] = time_clicks
+
+    if len(models) == 0:
+        return model, Tu, Tv, Tw, degree
+
+    if len(models) > 1:
+        return model, Tu, Tv, Tw, degree
+
+    name  = models[0]
+    model = namespace[name]
+
+    knots  = ''
+    degree = ''
+
+    if isinstance(model, (SplineCurve, NurbsCurve)):
+        Tu = ', '.join(str(i) for i in model.knots)
+        Tu = '[{}]'.format(Tu)
+        Tu = 'u = {}'.format(Tu)
+
+        degree = str(model.degree)
+        degree = 'degree = {}'.format(degree)
+
+    elif isinstance(model, (SplineSurface, NurbsSurface)):
+        Tu = ', '.join(str(i) for i in model.knots[0])
+        Tu = '[{}]'.format(Tu)
+        Tu = 'u = {}'.format(Tu)
+
+        Tv = ', '.join(str(i) for i in model.knots[1])
+        Tv = '[{}]'.format(Tv)
+        Tv = 'v = {}'.format(Tv)
+
+        degree = ', '.join(str(i) for i in model.degree)
+        degree = '[{}]'.format(degree)
+        degree = 'degrees = {}'.format(degree)
+
+    print('show model done')
+
+    return model, Tu, Tv, Tw, degree
+
+# =================================================================
+@app.callback(
+    [Output("editor-table", "columns"),
+     Output("editor-table", "data")],
+    [Input('edited_model', 'data')]
+)
+def update_editor_data(data):
+    if data is None:
+        return [], []
+
+    model = model_from_data(data)
+
+    dim = model.points.shape[-1]
+    xyz_names = ['x', 'y', 'z'][:dim]
+
+    if isinstance(model, (SplineCurve, NurbsCurve)):
+        names = ['i']
+        data = []
+        nu = model.points.shape[0]
+        for i in range(nu):
+            d = {'i': i}
+
+            xyz = model.points[i,:]
+            for k,v in zip(xyz_names, xyz):
+                d[k] = v
+
+            data += [OrderedDict(d)]
+
+    elif isinstance(model, (SplineSurface, NurbsSurface)):
+        names = ['i', 'j']
+        data = []
+        nu, nv = model.points.shape[:-1]
+        for i in range(nu):
+            for j in range(nv):
+                d = {'i': i, 'j': j}
+
+                xyz = model.points[i,j,:]
+                for k,v in zip(xyz_names, xyz):
+                    d[k] = v
+
+                data += [OrderedDict(d)]
+
+    names += xyz_names
+    columns = [{"name": i, "id": i} for i in names]
+
+    return columns, data
 
 # =================================================================
 @app.callback(
