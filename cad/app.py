@@ -41,13 +41,19 @@ from bsplines_utilities import translate_nurbs_curve
 from bsplines_utilities import rotate_nurbs_curve
 from bsplines_utilities import homothetic_nurbs_curve
 
+from datatypes import SplineCurve
+from datatypes import SplineSurface
+from datatypes import SplineVolume
+from datatypes import NurbsCurve
+from datatypes import NurbsSurface
+from datatypes import NurbsVolume
 
-SplineCurve   = namedtuple('SplineCurve',   'knots, degree, points')
-SplineSurface = namedtuple('SplineSurface', 'knots, degree, points')
-SplineVolume  = namedtuple('SplineVolume',  'knots, degree, points')
-NurbsCurve    = namedtuple('NurbsCurve',    'knots, degree, points, weights')
-NurbsSurface  = namedtuple('NurbsSurface',  'knots, degree, points, weights')
-NurbsVolume   = namedtuple('NurbsVolume',   'knots, degree, points, weights')
+from gallery import make_line
+from gallery import make_arc
+from gallery import make_square
+from gallery import make_circle
+from gallery import make_half_annulus_cubic
+from gallery import make_L_shape_C1
 
 # ... global variables
 namespace = OrderedDict()
@@ -65,6 +71,8 @@ d_timestamp['line']     = -10000
 d_timestamp['arc']      = -10000
 d_timestamp['square']   = -10000
 d_timestamp['circle']   = -10000
+d_timestamp['half_annulus_cubic'] = -10000
+d_timestamp['L_shape_C1'] = -10000
 d_timestamp['cube']     = -10000
 d_timestamp['cylinder'] = -10000
 
@@ -75,129 +83,6 @@ d_timestamp['subdivide'] = -10000
 d_timestamp['translate']  = -10000
 d_timestamp['rotate']     = -10000
 d_timestamp['homothetie'] = -10000
-# ...
-
-# ... TODO to be moved to gallery
-def make_line(origin=(0.,0.), end=(1.,0.)):
-    knots  = [0., 0., 1., 1.]
-    degree = 1
-    n      = len(knots) - degree - 1
-
-    P = np.zeros((n, 2))
-    P[:, 0] = [origin[0], end[0]]
-    P[:, 1] = [origin[1], end[1]]
-
-    return SplineCurve(knots=knots, degree=degree, points=P)
-
-def make_arc(center=(0.,0.), radius=1., angle=90.):
-    if angle == 90.:
-        knots  = [0., 0., 0., 1., 1., 1.]
-        degree = 2
-        n      = len(knots) - degree - 1
-
-        P = np.zeros((n, 2))
-        P[:, 0] = [1., 1., 0.]
-        P[:, 1] = [0., 1., 1.]
-
-        # weights
-        s2 = 1./np.sqrt(2)
-        W = np.zeros(n)
-        W[:] = [1., s2, 1.]
-
-    elif angle == 120.:
-        knots  = [0., 0., 0., 1., 1., 1.]
-        degree = 2
-        n      = len(knots) - degree - 1
-
-        P = np.zeros((n, 2))
-        a = np.cos(np.pi/6.)
-        P[:, 0] = [ a, 0., -a]
-        P[:, 1] = [.5, 2., .5]
-
-        # weights
-        W = np.zeros(n)
-        W[:] = [1., 1./2., 1.]
-
-    elif angle == 180.:
-        knots  = [0., 0., 0., 0., 1., 1., 1., 1.]
-        degree = 3
-        n      = len(knots) - degree - 1
-
-        P = np.zeros((n, 2))
-        P[:, 0] = [1., 1., -1., -1.]
-        P[:, 1] = [0., 2.,  2.,  0.]
-
-        # weights
-        W = np.zeros(n)
-        W[:] = [1., 1./3., 1./3., 1.]
-
-    else:
-        raise NotImplementedError('TODO, given {}'.format(angle))
-
-    P *= radius
-    P[:,0] += center[0]
-    P[:,1] += center[1]
-
-    return NurbsCurve(knots=knots, degree=degree, points=P, weights=W)
-
-def make_square(origin=(0,0), length=1.):
-    Tu  = [0., 0., 1., 1.]
-    Tv  = [0., 0., 1., 1.]
-    pu = 1
-    pv = 1
-    nu = len(Tu) - pu - 1
-    nv = len(Tv) - pv - 1
-    gridu = np.unique(Tu)
-    gridv = np.unique(Tv)
-
-    origin = np.asarray(origin)
-
-    P = np.asarray([[[0.,0.],[0.,1.]],[[1.,0.],[1.,1.]]])
-    for i in range(0, 2):
-        for j in range(0, 2):
-            P[i,j,:] = origin + P[i,j,:]*length
-
-    return SplineSurface(knots=(Tu, Tv), degree=(pu, pv), points=P)
-
-def make_circle(center=(0.,0.), radius=1.):
-    Tu  = [0., 0., 0., 1, 1., 1.]
-    Tv  = [0., 0., 0., 1, 1., 1.]
-    pu = 2
-    pv = 2
-    nu = len(Tu) - pu - 1
-    nv = len(Tv) - pv - 1
-    gridu = np.unique(Tu)
-    gridv = np.unique(Tv)
-
-
-    s = 1./np.sqrt(2)
-    P          = np.zeros((nu,nv,2))
-    P[0,0,:]   = np.asarray([-s   , -s   ])
-    P[1,0,:]   = np.asarray([-2*s , 0.   ])
-    P[2,0,:]   = np.asarray([-s   , s    ])
-    P[0,1,:]   = np.asarray([0.   , -2*s ])
-    P[1,1,:]   = np.asarray([0.   , 0.0  ])
-    P[2,1,:]   = np.asarray([0.   , 2*s  ])
-    P[0,2,:]   = np.asarray([s    , -s   ])
-    P[1,2,:]   = np.asarray([2*s  , 0.   ])
-    P[2,2,:]   = np.asarray([s    , s    ])
-
-    P *= radius
-    P[:,:,0] += center[0]
-    P[:,:,1] += center[1]
-
-    W       = np.zeros((3,3))
-    W[0,0]  = 1.
-    W[1,0]  = s
-    W[2,0]  = 1.
-    W[0,1]  = s
-    W[1,1]  = 1.
-    W[2,1]  = s
-    W[0,2]  = 1.
-    W[1,2]  = s
-    W[2,2]  = 1.
-
-    return NurbsSurface(knots=(Tu, Tv), degree=(pu, pv), points=P, weights=W)
 # ...
 
 # ...
@@ -466,6 +351,42 @@ tab_circle = dcc.Tab(label='circle', children=[
 ])
 
 # =================================================================
+tab_half_annulus_cubic = dcc.Tab(label='half_annulus_cubic', children=[
+                              html.Label('center'),
+                              dcc.Input(id='half_annulus_cubic_center',
+                                        placeholder='Enter a value ...',
+                                        value='',
+                                        type='text'
+                              ),
+                              html.Label('rmax'),
+                              dcc.Input(id='half_annulus_cubic_rmax',
+                                        placeholder='Enter a value ...',
+                                        value='',
+                                        type='text'
+                              ),
+                              html.Label('rmin'),
+                              dcc.Input(id='half_annulus_cubic_rmin',
+                                        placeholder='Enter a value ...',
+                                        value='',
+                                        type='text'
+                              ),
+                              html.Button('Submit', id='half_annulus_cubic_submit',
+                                          n_clicks_timestamp=0),
+])
+
+# =================================================================
+tab_L_shape_C1 = dcc.Tab(label='L_shape_C1', children=[
+                              html.Label('center'),
+                              dcc.Input(id='L_shape_C1_center',
+                                        placeholder='Enter a value ...',
+                                        value='',
+                                        type='text'
+                              ),
+                              html.Button('Submit', id='L_shape_C1_submit',
+                                          n_clicks_timestamp=0),
+])
+
+# =================================================================
 tab_cube = dcc.Tab(label='cube', children=[
                               html.Label('origin'),
                               dcc.Input(id='cube_origin',
@@ -502,6 +423,8 @@ tab_geometry_2d = dcc.Tab(label='2D', children=[
                           dcc.Tabs(children=[
                                    tab_square,
                                    tab_circle,
+                                   tab_half_annulus_cubic,
+                                   tab_L_shape_C1,
                           ]),
 ])
 
@@ -743,7 +666,13 @@ app.layout = html.Div([
      Input('square_submit', 'n_clicks_timestamp'),
      Input('circle_center', 'value'),
      Input('circle_radius', 'value'),
-     Input('circle_submit', 'n_clicks_timestamp')]
+     Input('circle_submit', 'n_clicks_timestamp'),
+     Input('half_annulus_cubic_center', 'value'),
+     Input('half_annulus_cubic_rmax', 'value'),
+     Input('half_annulus_cubic_rmin', 'value'),
+     Input('half_annulus_cubic_submit', 'n_clicks_timestamp'),
+     Input('L_shape_C1_center', 'value'),
+     Input('L_shape_C1_submit', 'n_clicks_timestamp')]
 )
 def load_model(time_clicks,
                line_origin, line_end,
@@ -753,7 +682,13 @@ def load_model(time_clicks,
                square_origin, square_length,
                square_submit_time,
                circle_center, circle_radius,
-               circle_submit_time):
+               circle_submit_time,
+               half_annulus_cubic_center,
+               half_annulus_cubic_rmax,
+               half_annulus_cubic_rmin,
+               half_annulus_cubic_submit_time,
+               L_shape_C1_center,
+               L_shape_C1_submit_time):
 
     global d_timestamp
 
@@ -872,6 +807,56 @@ def load_model(time_clicks,
 
         return make_circle(center=circle_center,
                            radius=circle_radius)
+
+    elif ( not( half_annulus_cubic_center is '' ) and
+           not( half_annulus_cubic_rmax is '' ) and
+           not( half_annulus_cubic_rmin is '' ) and
+           not( half_annulus_cubic_submit_time <= d_timestamp['half_annulus_cubic'] )
+         ):
+        # ...
+        try:
+            half_annulus_cubic_center = [float(i) for i in half_annulus_cubic_center.split(',')]
+
+        except:
+            raise ValueError('Cannot convert half_annulus_cubic_center')
+        # ...
+
+        # ...
+        try:
+            half_annulus_cubic_rmax = float(half_annulus_cubic_rmax)
+
+        except:
+            raise ValueError('Cannot convert half_annulus_cubic_rmax')
+        # ...
+
+        # ...
+        try:
+            half_annulus_cubic_rmin = float(half_annulus_cubic_rmin)
+
+        except:
+            raise ValueError('Cannot convert half_annulus_cubic_rmin')
+        # ...
+
+        d_timestamp['half_annulus_cubic'] = half_annulus_cubic_submit_time
+
+        return make_half_annulus_cubic(center=half_annulus_cubic_center,
+                           rmax=half_annulus_cubic_rmax,
+                           rmin=half_annulus_cubic_rmin)
+
+    elif ( not( L_shape_C1_center is '' ) and
+           not( L_shape_C1_submit_time <= d_timestamp['L_shape_C1'] )
+         ):
+        # ...
+        try:
+            L_shape_C1_center = [float(i) for i in L_shape_C1_center.split(',')]
+
+        except:
+            raise ValueError('Cannot convert L_shape_C1_center')
+        # ...
+
+        d_timestamp['L_shape_C1'] = L_shape_C1_submit_time
+
+        return make_L_shape_C1(center=L_shape_C1_center)
 
     else:
         return None
